@@ -1,0 +1,481 @@
+library(plyr)
+
+HiLow <- function (polyGenes.frame,singleDel,minFC,sex.specific,test,indel,count.test){
+  #Load human and primate GENE EXPRESSION dataset
+  humExp <- read.table(as.matrix("Documents/primate_mac/Human_Ensembl57_TopHat_UniqueReads.txt"),header=TRUE)
+  if (prim == "RheMac"){
+    primExp <- read.table(as.matrix("Documents/primate_mac/Macaque_Ensembl57_TopHat_UniqueReads.txt"),header=TRUE)
+  }else if (prim == "GorGor"){
+    primExp <- read.table(as.matrix("Documents/primate_mac/Gorilla_Ensembl57_TopHat_UniqueReads.txt"),header=TRUE)
+  }else if (prim == "Chimp"){
+    primExp <- read.table(as.matrix("Documents/primate_mac/Chimpanzee_Ensembl57_TopHat_UniqueReads.txt"),header=TRUE)
+  }else if (prim == "Orangutan"){
+    primExp <- read.table(as.matrix("Documents/primate_mac/Orangutan_Ensembl57_TopHat_UniqueReads.txt"),header=TRUE)
+  }else if (prim == "Bonobo"){
+    primExp <- read.table(as.matrix("Documents/primate_mac/Bonobo_Ensembl57_TopHat_UniqueReads.txt"),header=TRUE)
+  }
+  #####
+  #rm genes from X or Y
+  humExp <- humExp[humExp$Chr != "X" & humExp$Chr != "Y",]
+  primExp <- primExp[primExp$Chr != "X" & primExp$Chr != "Y",]
+  
+  ###
+  #organize polymorphism data
+  if (singleDel == TRUE){
+    polyGenes.frame <- polyGenes.frame[polyGenes.frame[,7] == 1,]
+    colnames(polyGenes.frame) <- c("chr","start","stop","GeneID","score","strand","count")
+  }else if (regexpr("ExonReg",text=test)[1] >=1){
+    colnames(polyGenes.frame) <- c("chr","start","stop","GeneID","score","stranda","strandb","dis")
+    #polyGenes.frame$normCDSExon <- polyGenes.frame$dis / (polyGenes.frame$stop - polyGenes.frame$start) 
+  }else if (indel == TRUE){
+    colnames(polyGenes.frame) <- c("chr","starta","stopa","GeneID","subfamily","stranda","strandb","dis")
+  }else{
+    colnames(polyGenes.frame) <- c("chr","start","stop","GeneID","score","strand")
+  }
+  #grab genes that contain a polymorphic element
+  count <- table(polyGenes.frame$GeneID)
+  polyGenes <- unique(polyGenes.frame$GeneID)
+  polyGenes <- as.data.frame(polyGenes)
+  colnames(polyGenes) <- c("GeneID")
+  GeneID <- names(count)
+  count.df <- data.frame(names(count),count)
+  count.df <- count.df[,-c(1)]
+  colnames(count.df) <- c("GeneID","count")
+  if (count.test == FALSE){
+    polyGenes <- as.data.frame(count.df$GeneID[count.df$count ==1])
+  }
+  colnames(polyGenes) <- c("GeneID")
+  #clean data of missing samples
+  #for human
+  mTest <- apply(X=humExp[,-c(1:6)],MARGIN=2,FUN=mean)
+  sTest <- apply(X=humExp[,-c(1:6)],MARGIN=2,FUN=sd)
+  rm <- ""
+  for (i in 1:length(mTest)){
+    if (mTest[i] == 0){
+      rm <- c(rm,i)
+    }
+  }
+  rm <- as.numeric(rm[-c(1)]) + 6
+  if (length(rm) > 0){
+    humExp <- humExp[,-c(rm)]
+  }
+  #for primate
+  mTest <- apply(X=primExp[,-c(1:6)],MARGIN=2,FUN=mean)
+  sTest <- apply(X=primExp[,-c(1:6)],MARGIN=2,FUN=sd)
+  rm <- ""
+  for (i in 1:length(mTest)){
+    if (mTest[i] == 0){
+      rm <- c(rm,i)
+    }
+  }
+  rm <- as.numeric(rm[-c(1)])+ 6
+  if (length(rm) > 0){
+    primExp <- primExp[,-c(rm)]
+  }
+  #Load orthology
+  orth <- read.table(as.matrix("Documents/primate_mac/Ortho_1to1_Primates.txt"),header=TRUE)
+  #attach orthologous gene names
+  if (prim == "RheMac"){
+     primGeneID <- orth[match(humExp$GeneID,orth$Human),][5]
+      humGeneID <- orth[match(primExp$GeneID,orth$Macaque),][1]
+  }else if (prim == "GorGor"){
+    primGeneID <- orth[match(humExp$GeneID,orth$Human),][3]
+    humGeneID <- orth[match(primExp$GeneID,orth$Gorilla),][1]
+  }else if (prim == "Chimp"){
+    primGeneID <- orth[match(humExp$GeneID,orth$Human),][2]
+    humGeneID <- orth[match(primExp$GeneID,orth$Chimpanzee),][1]
+  }else if (prim == "Orangutan"){
+    primGeneID <- orth[match(humExp$GeneID,orth$Human),][4]
+    humGeneID <- orth[match(primExp$GeneID,orth$Orangutan),][1]
+  }
+  humExp <- data.frame(primGeneID,humExp)
+  primExp <- data.frame(humGeneID,primExp)
+  #Remove NAs (genes without identified orthologes)
+  humExp <- na.exclude(humExp)
+  primExp <- na.exclude(primExp)
+
+  #make sure that hum and primate have the same #rows
+  # once the polyGenes are selected (need to double back to do this)
+  #1.)match hum to poly genes 
+  colnames(polyGenes) = "GeneID"
+  humPolyExp <- join(humExp,polyGenes,by="GeneID",type="inner",match="first")
+  humPolyExp <- merge(x=humPolyExp,y=count.df,by="GeneID")
+  #2.)match prim to those that hum matched
+  colnames(polyGenes) <- c("Human")
+  primPolyExp <- join(primExp,polyGenes,by="Human",type="inner",match="first")
+  primPolyExp <- merge(x=primPolyExp,y=count.df,by.y="GeneID",by.x="Human")
+  #3.)double back: match hum to those that prim matched
+  colnames(humPolyExp) <- c("Human",colnames(humPolyExp[,-c(1)]))
+  humPolyExp <- join(humPolyExp,primPolyExp,by="Human",type="inner",match="first")
+  primPolyExp <- join(primPolyExp,humPolyExp,by="Human",type="inner",match="first")
+  colnames(humPolyExp) <- c("GeneID",colnames(humPolyExp[,-c(1)]))
+  
+  #####
+  
+  humPolyGenes <- humExp[match(humExp$GeneID,humPolyExp$GeneID),][2]
+  compare <- data.frame(humExp$GeneID,humPolyGenes$GeneID)
+  #Get genes that are not polymorphic
+  humConsGenes <- as.data.frame(compare[(is.na(compare[,2] == TRUE)),][,1])
+  colnames(humConsGenes) <- c("GeneID")
+  humConsExp <- join(humExp,humConsGenes,by="GeneID",type="inner",match="first")
+  #remove instances where primate doesn't have an orth. gene
+  humConsExp <- na.exclude(humConsExp)
+  primPolyGenes <- primExp[match(primExp$GeneID,primPolyExp$GeneID),][2]
+  compare <- data.frame(primExp$GeneID,primPolyGenes[,1])
+  primConsGenes <- compare[(is.na(compare[,2] == TRUE)),][,1]
+  primConsExp <- primExp[match(primConsGenes,primExp$GeneID,nomatch=FALSE),]
+  #remove instances where primate doesn't have an orth. gene
+  primConsExp <- na.exclude(primConsExp)
+  colnames(humConsExp) <- c("Human",colnames(humConsExp[,-c(1)]))
+  primConsExp <- join(primConsExp,humConsExp,by="Human",type="inner",match="first")
+  humConsExp <- join(humConsExp,primConsExp,by="Human",type="inner",match="first")
+  #########
+  #If doing exon count get that data in order
+  if (regexpr("ExonReg",text=test)[1] >=1 ){
+    h <- humPolyExp[,-c(27:44)]
+    humPolyExp <- merge(h,polyGenes.frame,by="GeneID")
+  }
+  ##########
+  
+  
+  #######
+  ###Average over tissue depending on the species, tissue type, and sex
+  if (tissue == "brain"){
+    if (sex.specific == "male"){
+      hPolymean <- apply(X=humPolyExp[,c(9:13)],MARGIN=1,FUN=mean)
+      hConsmean <- apply(X=humConsExp[,c(9:13)],MARGIN=1,FUN=mean)
+      if (prim == "RheMac" | prim == "GorGor" | prim == "Orangutan"){
+        pPolymean <- primPolyExp[,c(9)]
+        pConsmean <- primConsExp[,c(9)]
+      }else if (prim == "Chimp"){
+        pPolymean <- apply(X=primPolyExp[,c(8:12)],MARGIN=1,FUN=mean)
+        pConsmean <- apply(X=primConsExp[,c(8:12)],MARGIN=1,FUN=mean)
+        }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }else if (sex.specific == "female"){
+      hPolymean <- humPolyExp[,c(8)]
+      hConsmean <- humConsExp[,c(8)]
+      if (prim == "RheMac"| prim == "GorGor"| prim == "Orangutan"){
+        pPolymean <- primPolyExp[,c(8)]
+        pConsmean <- primConsExp[,c(8)]
+      }else if (prim == "Chimp"){
+        pPolymean <- primPolyExp[,c(13)]
+        pConsmean <- primConsExp[,c(13)]
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }else{
+      hPolymean <- apply(X=humPolyExp[,c(8:13)],MARGIN=1,FUN=mean)
+      hConsmean <- apply(X=humConsExp[,c(8:13)],MARGIN=1,FUN=mean)
+      if (prim == "RheMac"| prim == "GorGor"){
+        pPolymean <-  apply(X=primPolyExp[,c(8:9)],MARGIN=1,FUN=mean)
+        pConsmean <-  apply(X=primConsExp[,c(8:9)],MARGIN=1,FUN=mean)
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }
+  }else  if (tissue == "cerebellum"){
+    if (sex.specific == "male"){
+      hPolymean <- humPolyExp[,c(15)]
+      hConsmean <- humConsExp[,c(15)]
+      if (prim == "RheMac"| prim == "GorGor"| prim == "Orangutan"){
+        pPolymean <- primPolyExp[,c(11)]
+        pConsmean <- primConsExp[,c(11)]
+      }else if (prim == "Chimp"){
+        pPolymean <- primPolyExp[,c(14)]
+        pConsmean <- primConsExp[,c(14)]
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }else if (sex.specific == "female"){
+      hPolymean <- humPolyExp[,c(14)]
+      hConsmean <- humConsExp[,c(14)]
+      if (prim == "RheMac"| prim == "GorGor"| prim == "Orangutan"){
+        pPolymean <- primPolyExp[,c(10)]
+        pConsmean <- primConsExp[,c(10)]
+      }else if (prim == "Chimp"){
+        pPolymean <- primPolyExp[,c(15)]
+        pConsmean <- primConsExp[,c(15)]
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }else{
+      hPolymean <- apply(X=humPolyExp[,c(14:15)],MARGIN=1,FUN=mean)
+      hConsmean <- apply(X=humConsExp[,c(14:15)],MARGIN=1,FUN=mean)
+      if (prim == "RheMac"| prim == "GorGor"){
+        pPolymean <- apply(X=primPolyExp[,c(10:11)],MARGIN=1,FUN=mean)
+        pConsmean <- apply(X=primConsExp[,c(10:11)],MARGIN=1,FUN=mean)
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }
+  }else  if (tissue == "heart"){
+    if (sex.specific == "male"){
+      hPolymean <- apply(X=humPolyExp[,c(17:18)],MARGIN=1,FUN=mean)
+      hConsmean <- apply(X=humConsExp[,c(17:18)],MARGIN=1,FUN=mean)
+      if (prim == "RheMac"| prim == "GorGor"| prim == "Orangutan"){
+        pPolymean <- primPolyExp[,c(13)]
+        pConsmean <- primConsExp[,c(13)]
+      }else if (prim == "Chimp"){
+        pPolymean <- primPolyExp[,c(16)]
+        pConsmean <- primConsExp[,c(16)]
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }else if (sex.specific == "female"){
+      hPolymean <- humPolyExp[,c(16)]
+      hConsmean <- humConsExp[,c(16)]
+      if (prim == "RheMac"| prim == "GorGor"| prim == "Orangutan"){
+        pPolymean <- primPolyExp[,c(12)]
+        pConsmean <- primConsExp[,c(12)]
+      }else if (prim == "Chimp"){
+        pPolymean <- primPolyExp[,c(17)]
+        pConsmean <- primConsExp[,c(17)]
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }else{
+      hPolymean <- apply(X=humPolyExp[,c(16:18)],MARGIN=1,FUN=mean)
+      hConsmean <- apply(X=humConsExp[,c(16:18)],MARGIN=1,FUN=mean)
+      if (prim == "RheMac"| prim == "GorGor"){
+        pPolymean <- apply(X=primPolyExp[,c(12:13)],MARGIN=1,FUN=mean)
+        pConsmean <- apply(X=primConsExp[,c(12:13)],MARGIN=1,FUN=mean)
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }
+  }else  if (tissue == "kidney"){
+    if (sex.specific == "male"){
+      hPolymean <- apply(X=humPolyExp[,c(20:21)],MARGIN=1,FUN=mean)
+      hConsmean <- apply(X=humConsExp[,c(20:21)],MARGIN=1,FUN=mean)
+      if (prim == "RheMac"| prim == "GorGor"| prim == "Orangutan"){
+        pPolymean <- primPolyExp[,c(15)]
+        pConsmean <- primConsExp[,c(15)]
+      }else if (prim == "Chimp"){
+        pPolymean <- primPolyExp[,c(18)]
+        pConsmean <- primConsExp[,c(18)]
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }else if (sex.specific == "female"){
+      hPolymean <- humPolyExp[,c(19)]
+      hConsmean <- humConsExp[,c(19)]
+      if (prim == "RheMac"| prim == "GorGor"| prim == "Orangutan"){
+        pPolymean <- primPolyExp[,c(14)]
+        pConsmean <- primConsExp[,c(14)]
+      }else if (prim == "Chimp"){
+        pPolymean <- primPolyExp[,c(19)]
+        pConsmean <- primConsExp[,c(19)]
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }else{
+      hPolymean <- apply(X=humPolyExp[,c(19:21)],MARGIN=1,FUN=mean)
+      hConsmean <- apply(X=humConsExp[,c(19:21)],MARGIN=1,FUN=mean)
+      if (prim == "RheMac"| prim == "GorGor"){
+        pPolymean <- apply(X=primPolyExp[,c(14:15)],MARGIN=1,FUN=mean)
+        pConsmean <- apply(X=primConsExp[,c(14:15)],MARGIN=1,FUN=mean)
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }
+  }else  if (tissue == "liver"){
+    if (sex.specific == "male"){
+      hPolymean <- apply(X=humPolyExp[,c(22:23)],MARGIN=1,FUN=mean)
+      hConsmean <- apply(X=humConsExp[,c(22:23)],MARGIN=1,FUN=mean)
+      if (prim == "RheMac"| prim == "GorGor"| prim == "Orangutan"){
+        pPolymean <- primPolyExp[,c(17)]
+        pConsmean <- primConsExp[,c(17)]
+      }else if (prim == "Chimp"){
+        pPolymean <- primPolyExp[,c(20)]
+        pConsmean <- primConsExp[,c(20)]
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }else if (sex.specific == "female"){
+      hPolymean <- NA
+      hConsmean <- NA
+      if (prim == "RheMac"| prim == "GorGor"| prim == "Orangutan"){
+        pPolymean <- primPolyExp[,c(16)]
+        pConsmean <- primConsExp[,c(16)]
+      }else if (prim == "Chimp"){
+        pPolymean <- primPolyExp[,c(21)]
+        pConsmean <- primConsExp[,c(21)]
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }else{
+      hPolymean <- apply(X=humPolyExp[,c(22:23)],MARGIN=1,FUN=mean)
+      hConsmean <- apply(X=humConsExp[,c(22:23)],MARGIN=1,FUN=mean)
+      if (prim == "RheMac"| prim == "GorGor"){
+        pPolymean <- apply(X=primPolyExp[,c(16:17)],MARGIN=1,FUN=mean)
+        pConsmean <- apply(X=primConsExp[,c(16:17)],MARGIN=1,FUN=mean)
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }
+  }else  if (tissue == "testis"){
+    if (sex.specific == "male"){
+      hPolymean <- apply(X=humPolyExp[,c(24:25)],MARGIN=1,FUN=mean)
+      hConsmean <- apply(X=humConsExp[,c(24:25)],MARGIN=1,FUN=mean)
+      if (prim == "RheMac"| prim == "GorGor"| prim == "Orangutan"){
+        pPolymean <- primPolyExp[,c(18)]
+        pConsmean <- primConsExp[,c(18)]
+      }else if (prim == "Chimp"){
+        pPolymean <- primPolyExp[,c(22)]
+        pConsmean <- primConsExp[,c(22)]
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }else if (sex.specific == "female"){
+      hPolymean <- NA
+      hConsmean <- NA
+      pPolymean <- NA
+      pConsmean <- NA
+    }else{
+      hPolymean <- apply(X=humPolyExp[,c(24:25)],MARGIN=1,FUN=mean)
+      hConsmean <- apply(X=humConsExp[,c(24:25)],MARGIN=1,FUN=mean)
+      if (prim == "RheMac"| prim == "GorGor"| prim == "Orangutan"){
+        pPolymean <- primPolyExp[,c(18)]
+        pConsmean <- primConsExp[,c(18)]
+      }else{
+        pPolymean <- NA
+        pConsmean <- NA
+      }
+    }
+  }
+
+  # End of assigning means based on tissue,sex,and species
+  #######
+  CalcPoly.df <- data.frame(hPolymean,pPolymean)
+  CalcCons.df <- data.frame(hConsmean,pConsmean)
+  #CalcPoly.df2 <- CalcPoly.df[CalcPoly.df$hPolymean > 0 | CalcPoly.df$pPolymean > 0,]
+  #CalcCons.df2 <- CalcCons.df[CalcCons.df$hConsmean > 0 | CalcCons.df$pConsmean > 0,]
+  CalcPoly.df2 <- data.frame(hPolymean,pPolymean)
+  CalcCons.df2 <- data.frame(hConsmean,pConsmean)
+  
+  
+  # Determine which of the polymorphic genes are higher in hum or primate
+  if (length(minFC) == 1){#if using a minimum fold change
+    #DirPoly <- hPolymean/pPolymean > minFC
+    #DirCons <- (hConsmean/pConsmean) > minFC
+    DirPoly2 <- CalcPoly.df2$hPolymean-CalcPoly.df2$pPolymean > minFC
+    DirCons2 <- ( CalcCons.df2$hConsmean- CalcCons.df2$pConsmean) > minFC 
+    DirPoly1 <- CalcPoly.df2$hPolymean-CalcPoly.df2$pPolymean < -1 * minFC
+    DirCons1 <- ( CalcCons.df2$hConsmean- CalcCons.df2$pConsmean) < -1 * minFC 
+  }else{
+    DirPoly1 <- CalcPoly.df2$hPolymean < CalcPoly.df2$pPolymean #hless than
+    DirCons1 <-  CalcCons.df2$hConsmean <  CalcCons.df2$pConsmean
+    DirPoly2 <- CalcPoly.df2$hPolymean > CalcPoly.df2$pPolymean
+    DirCons2 <-  CalcCons.df2$hConsmean >  CalcCons.df2$pConsmean
+  }
+
+  #FISCHER TEST
+  cons <- c(length(DirCons2[DirCons2 == "TRUE"]),length(DirCons1[DirCons1 == "TRUE"]))
+  poly <- c(length(DirPoly2[DirPoly2 == "TRUE"]),length(DirPoly1[DirPoly1 == "TRUE"]))
+  df <- data.frame(poly,cons)
+  rownames(df) <- c("human.greater","human.less")
+  if (test == "fisher"){
+    f <- (fisher.test(x=df))
+    f$cons <- cons
+    f$poly <- poly
+    return(f)
+  } else if (count.test == TRUE){
+      model.exp <- c(((hPolymean - pPolymean)))
+      model.count <- c(humPolyExp$count)
+      length.gene <- c(humPolyExp$End - humPolyExp$Begin)
+      dftest <- na.exclude(data.frame(model.exp,model.count,length.gene))
+      dftest <- dftest[dftest[,1] != Inf & dftest[,1] != -Inf ,]
+      dftest <- dftest[dftest$model.exp < quantile(model.exp)[4] & dftest$model.exp > quantile(model.exp)[1] ,]
+      model <- lm(dftest$model.exp ~ dftest$model.count )
+    }else if (test == "logReg" | regexpr("ExonReg",text=test)[1] >=1 ){
+    model.exp <- c((hPolymean - pPolymean),(hConsmean - pConsmean))
+    model.poly <- c(rep(1,times=length(hPolymean)),rep(0,times=length(hConsmean)))
+    if (regexpr("ExonReg",text=test)[1] >=1 ){
+        model.exp <- c((hPolymean > pPolymean))
+        model.bin <- c(humPolyExp[,33] )
+        model.sub <- c(humPolyExp$score)
+        model.dis <- c(humPolyExp$ExonicLength)
+        model.length <- c(humPolyExp$End - humPolyExp$Begin)
+        model.poly <- c(rep(1,times=nrow(humPolyExp)))
+        model.orient <- c(as.character(humPolyExp$stranda) == as.character(humPolyExp$strandb))
+        dftest <- na.exclude(data.frame(model.exp,model.bin,model.dis,model.poly,model.sub,model.orient,model.length))
+        colnames(dftest) <- c("exp","bin","dis","poly","sub","orient","length")
+        dftest <- dftest[dftest[,1] != Inf & dftest[,1] != -Inf ,]
+        if (length(minFC) ==1){
+          model.expUP <- (c((hPolymean - pPolymean) > minFC) * 2)
+          model.expDOWN <- (c((hPolymean - pPolymean) < (-1 * minFC))*1)
+          model.exp <- model.expUP + model.expDOWN
+          dftest <- na.exclude(data.frame(model.exp,model.bin,model.dis,model.poly,model.sub,model.orient,model.length))
+          colnames(dftest) <- c("exp","bin","dis","poly","sub","orient","length")
+          dftest <- dftest[dftest[,1] != Inf & dftest[,1] != -Inf ,]
+          dftest <- dftest[dftest$exp !=0,]
+        }
+        if (test == "ExonReg_dis"){
+            model <- glm(as.factor(dftest$exp) ~  dftest$dis  ,family="binomial")
+          }else if (test == "ExonReg_bin"){
+            model <- glm(as.factor(dftest$exp) ~  dftest$bin ,family="binomial")
+          }else if (test == "ExonReg_sub"){
+            model <- glm(as.factor(dftest$exp) ~  dftest$sub,family="binomial")
+          }else if (test == "ExonReg_poly"){
+            model <- glm(as.factor(dftest$exp) ~  dftest$poly,family="binomial")
+          }else if (test == "ExonReg_orient"){
+            model <- glm(as.factor(dftest$exp) ~  as.factor(dftest$orient),family="binomial")
+          }else{
+            model.sub <- c(humPolyExp$score,rep(0,times=length(hConsmean)))
+            model.exp <- c((hPolymean - pPolymean),(hConsmean - pConsmean))
+            dftest <- na.exclude(data.frame(log(model.exp),model.bin,model.dis,model.poly,model.sub))
+            dftest <- dftest[dftest[,1] != Inf & dftest[,1] != -Inf ,]
+            colnames(dftest) <- c("exp","bin","dis","poly","sub")
+            model <- lm(dftest$exp ~ dftest$poly + dftest$dis + dftest$bin + dftest$sub)
+          }
+        }else{
+          dftest <- na.exclude(data.frame(log(model.exp),model.poly))
+          dftest <- dftest[dftest[,1] != Inf & dftest[,1] != -Inf ,]
+          model <- glm(dftest$model.poly ~ dftest$log.model.exp. ,family="binomial")
+        }
+  return(model)
+  } 
+}
+##############################################
+##############################################
+### USER PORTION
+##############################################
+##############################################
+tissue <- "liver" #(options:brain,cerebellum,heart,kidney,testis,liver)
+sex.specific <- "male" # "male","female","both"
+prim <- "Orangutan" #(options: RheMac, GorGor, Orangutan,Chimp,Bonobo)
+singleDel <- FALSE #TRUE = check for a single deletion. This requires count data in column 7 of data.frame
+minFC <- vector() #if you want a min fold change put a number, else type vector()
+test <- "fisher" # logReg or fisher or ExonReg ExonReg_dis ExonReg_bin ExonReg_sub
+indel <- FALSE #does the dataframe contain distances from the exon 
+count.test <- TRUE #FALSE = Restricts to Single integrations, necessary for ExonReg_dis ExonReg_bin and ExonReg_sub
+
+#load polymorphism data
+polyGenes.frame <- read.table(as.matrix("Documents/primate_mac/Ensem_hgNOTponAbe_AluMetrics.bed"))
+#polyGenes.frame <- read.table(as.matrix("Documents/primate_mac/hg19GAP_NORPMSKingenes_notrh_bp.bed"))
+hilow.frame <- HiLow(polyGenes.frame,singleDel,minFC,sex.specific,test,indel,count.test)
+hilow.frame
+hilow.frame$poly
+hilow.frame$cons
+
+summary(hilow.frame)
+
+
