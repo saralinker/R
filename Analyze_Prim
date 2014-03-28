@@ -1,0 +1,88 @@
+library(plyr)
+# load("~/Documents/primate_mac/SingleAluInserts_NHP.rda")#this data contains frames for each NHP where there is only one Alu in each frame
+# alu.chimp.single
+# alu.gor.single
+# alu.or.single
+# alu.rhe.single
+# load("~/Documents/primate_mac/genelists.rda")
+# genes lists for all MEI in all species, and "valid" MEIs meaning they're present in the species below
+#also contains polyGenes.frames(with validated MEIs only!!)
+#also contains v_alu.frame
+# Use with Prim_Lib.R
+# load("~/Documents/primate_mac/DI_groupings.rda")
+# this includes
+# shared_o.r_missing_c.g .... gene names that have Alu DI in orangutan and rhemac but not in chimp or gorilla
+# no.poly.genes ... gene names that do not have a Alu DI in any of the NHPs
+# load("~/Documents/primate_mac/Final_OddsRatios_primate.rda")
+# alu.frame <- all the odds ratios for alu
+# l1.frame <- all the odds ratios for l1
+# sva.frame <- all the odds ratios for sva
+#  load("/Users/saralinker/Documents/primate_mac/genelists.rda")
+# valid.<Prim>.<Element>...
+# 
+# load("/Users/saralinker/Documents/primate_mac/valid_oddsRatios.rda")
+# 
+####
+# Run analysis using Prim_Lib.R
+####
+# Initialize Variables
+#valid.frame <- matrix(ncol=12,nrow=1)
+#colnames(valid.frame) <- c("Primate","Sex","Tissue","Element","OddsRatio","conf1","conf2","Raw_pvalue","Cons_HsHigh","Cons_HsLow","Poly_HsHigh","Poly_HsLow")
+#element <- c("SVA")
+#sexes <- c("male","female")
+#t <- c("brain","kidney","liver","heart","testis")
+#for (sex.specific in sexes){
+  #for (tissue in t){
+  prim <- "Chimp"
+  test.type <- "count"
+  tissue <- "brain"
+  sex.specific <- "female"
+  #polyGenes.frame <- read.table(as.matrix("~/Documents/primate_mac/Ensem_hgNOTrheMac_AluMetrics.bed")) 
+  polyGenes.frame <- valid.chimp.alu.polyGenes.frame
+  orth <- read.table(as.matrix("Documents/primate_mac/Ortho_1to1_Primates.txt"),header=TRUE)
+  count.test <- TRUE
+  
+  humExp <- load.Hum.exp() #Expression for all genes and all tissues in human 
+  primExp <- load.Prim.exp(prim) #Expression for all genes and all tissues in <prim> 
+  humExp2 <- hum.orthologs(humExp,orth,prim) #Human expression for genes with orthologs in <prim>
+  primExp2 <- prim.orthologs(primExp,orth,prim)  #Primate expression for genes with orthologs in hum
+  
+  
+  polyGenes.frame <- load.polymorphisms(polyGenes.frame,test.type) #gene df (no expression) with all DIs
+  polyGenes <- get.poly.genes(polyGenes.frame,count.test) #gene names and count of DIs per gene
+  type <- "human"
+  humPolyExp <- poly.expression(humExp2,primExp2,polyGenes,polyGenes.frame,test.type,type)#subset of humExp with only genes that have a DI
+  type <- "primate"
+  primPolyExp <- poly.expression(humExp2,primExp2,polyGenes,polyGenes.frame,test.type,type)#subset of primExp with only genes that have a DI
+  type <- "human"
+  humConsExp <- cons.expression(humExp2,humPolyExp,primExp2,primPolyExp) #all genes with no evidence for DI
+  type <- "primate"
+  primConsExp <- cons.expression(humExp2,humPolyExp,primExp2,primPolyExp) #all genes with no evidence for DI
+  
+  
+  #### if doing fisher or single gene logReg
+  ## Adding this anew
+  #humPolyExp <- unique(humPolyExp)
+  #humConsExp <- unique(humConsExp)
+  #primPolyExp <- unique(primPolyExp)
+  #primConsExp <- unique(primConsExp)
+  
+  type <- "poly"
+  poly.frame <- tissue.values(tissue,prim,humPolyExp,humConsExp,primPolyExp,primConsExp,type)#expression values for DI genes in <tissue>
+  type <- "cons"
+  cons.frame <- tissue.values(tissue,prim,humPolyExp,humConsExp,primPolyExp,primConsExp,type)#expression values for non-DI genes in <tissue>
+  
+  # TESTS
+  minFC <- vector()
+  model <- fisher(minFC,poly.frame,cons.frame) #count the number of genes with greater(or less) expression in humans than the NHP
+  
+  f <- (fisher.test(x=model))
+  ##f$cons <- cons
+  ##f$poly <- poly
+  ##f
+  ##model
+  #valid.frame <- rbind(valid.frame,c(prim,sex.specific,tissue,element,as.numeric(round(f$estimate,digits=3)),as.numeric(f$conf.int[1]),as.numeric(f$conf.int[2]),as.numeric(f$p.value),as.character(model$cons)[1],as.character(model$cons)[2],as.character(model$poly)[1],as.character(model$poly)[2]))
+ # }
+#}
+##model.frame <- regression.frame(poly.frame,cons.frame,humPolyExp,primPolyExp,minFC)
+  
