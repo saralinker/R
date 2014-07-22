@@ -1,0 +1,43 @@
+## Purpose: Count Reads Over exons
+## Created: Slinker, 07/22/2014
+## Associated rdas:
+###############
+
+#load libraries
+library("GenomicRanges")
+library("Rsamtools")
+library("GenomicFeatures")
+library("rtracklayer")
+
+##Step 1:
+#Load hg19 reference of known genes
+library("TxDb.Hsapiens.UCSC.hg19.knownGene")
+#extract genes
+exbygene <- exonsBy(TxDb.Hsapiens.UCSC.hg19.knownGene, "gene")
+
+##Step 2: 
+#
+files <- c("~/Documents/SalkProjects/Marchetto/NHPTimeCourse/RNASeq/CM1-16-5_00_accepted_hits.bam","~/Documents/SalkProjects/Marchetto/NHPTimeCourse/RNASeq/CM1-16-5_01_accepted_hits.bam")
+getCounts <- function(fileName) {
+     aligns <- readBamGappedAlignments(fileName)
+     counts <- countOverlaps(exbygene, aligns)
+     se <- summarizeOverlaps(exbygene, aligns)
+     names(counts) <- names(exbygene)
+     return(counts)
+}
+
+countTable <- sapply(files, getCounts)
+countTable <- countTable[rowSums(countTable) != 0, ]
+colnames(countTable) <- c("Human1a", "Human1b")
+
+#Normalize-ish data
+library("DESeq2")
+#colnames(se) <- c("human1a")
+deseq <- newCountDataSet(countData=assays(se)$counts,
+                         conditions=rownames(colData(se)))
+
+
+ddsPara <- DESeqDataSet(se = se, design = ~ patient + treatment)
+
+cds <- newCountDataSet(countTable,c("Human1a","Human1b"))
+cds <- estimateSizeFactors(countTable)
