@@ -42,17 +42,33 @@ design <- data.frame(
 pairedSamples = design$libType == "paired-end"
 condition = design$condition[ pairedSamples ]
 
-library( "DESeq" )
-cds = newCountDataSet( countTable, condition )
-sizeFactors( cds )
-cds = estimateDispersions( cds ,method='blind') #change this once conditions are increased
-plotDispEsts( cds )
-res = nbinomTest( cds, "human1a", "human1b" )
-plotMA(res)
-hist(res$pval, breaks=100, col="skyblue", border="slateblue", main="")
-#filter out nominally sig hits
-resSig = res[ res$padj < 0.1, ]
-#filter down-regulated from sig
-head( resSig[ order( resSig$foldChange, -resSig$baseMean ), ] )
-#filter up-reg from sig
-head( resSig[ order( -resSig$foldChange, -resSig$baseMean ), ] )
+# library( "DESeq" )
+# cds = newCountDataSet( countTable, condition )
+# sizeFactors( cds )
+# cds = estimateDispersions( cds ,method='blind') #change this once conditions are increased
+# plotDispEsts( cds )
+# res = nbinomTest( cds, "human1a", "human1b" )
+# plotMA(res)
+# hist(res$pval, breaks=100, col="skyblue", border="slateblue", main="")
+# #filter out nominally sig hits
+# resSig = res[ res$padj < 0.1, ]
+# #filter down-regulated from sig
+# head( resSig[ order( resSig$foldChange, -resSig$baseMean ), ] )
+# #filter up-reg from sig
+# head( resSig[ order( -resSig$foldChange, -resSig$baseMean ), ] )
+
+
+#DESeq2
+dds <- DESeqDataSetFromMatrix(countData = countData,
+                              colData = colData,
+                              design = ~ condition)
+
+dds$condition <- factor(dds$condition,
+                        levels=c("untreated","treated"))
+dds$condition <- relevel(dds$condition, "untreated")
+#dds$condition <- droplevels(dds$condition) #use this if removing samples
+dds <- DESeq(dds)
+res <- results(dds)
+resOrdered <- res[order(res$padj),]
+#MA Plot
+plotMA(as.data.frame(res), main="DESeq2", ylim=c(-2,2))
