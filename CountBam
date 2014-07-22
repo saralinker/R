@@ -12,12 +12,14 @@ library("rtracklayer")
 ##Step 1:
 #Load hg19 reference of known genes
 library("TxDb.Hsapiens.UCSC.hg19.knownGene")
-#extract genes
+
+#create a gene range list using the hg19 annotation
 exbygene <- exonsBy(TxDb.Hsapiens.UCSC.hg19.knownGene, "gene")
 
-##Step 2: 
-#
-files <- c("~/Documents/SalkProjects/Marchetto/NHPTimeCourse/RNASeq/CM1-16-5_00_accepted_hits.bam","~/Documents/SalkProjects/Marchetto/NHPTimeCourse/RNASeq/CM1-16-5_01_accepted_hits.bam")
+#summarize
+files <- c("~/Documents/SalkProjects/Marchetto/NHPTimeCourse/RNASeq/CM1-16-5_00_accepted_hits.bam",
+           "~/Documents/SalkProjects/Marchetto/NHPTimeCourse/RNASeq/CM1-16-5_01_accepted_hits.bam")
+
 getCounts <- function(fileName) {
      aligns <- readBamGappedAlignments(fileName)
      counts <- countOverlaps(exbygene, aligns)
@@ -28,16 +30,29 @@ getCounts <- function(fileName) {
 
 countTable <- sapply(files, getCounts)
 countTable <- countTable[rowSums(countTable) != 0, ]
-colnames(countTable) <- c("Human1a", "Human1b")
+colnames(countTable) <- c("human1a", "human1b")
 
-#Normalize-ish data
-library("DESeq2")
-#colnames(se) <- c("human1a")
-deseq <- newCountDataSet(countData=assays(se)$counts,
-                         conditions=rownames(colData(se)))
+design <- data.frame(
+  condition=c("human1a", "human1b"),
+  replicate=c(1,1),
+  libType=rep("paired-end", 2)
+  #,countfiles=colData(se_exons)[,1], stringsAsFactors=TRUE)
+)
 
+pairedSamples = design$libType == "paired-end"
+condition = design$condition[ pairedSamples ]
 
-ddsPara <- DESeqDataSet(se = se, design = ~ patient + treatment)
-
-cds <- newCountDataSet(countTable,c("Human1a","Human1b"))
-cds <- estimateSizeFactors(countTable)
+library( "DESeq" )
+cds = newCountDataSet( countTable, condition )
+sizeFactors( cds )
+cds = estimateDispersions( cds ,method='blind') #change this once conditions are increased
+plotDispEsts( cds )
+res = nbinomTest( cds, "human1a", "human1b" )
+plotMA(res)
+hist(res$pval, breaks=100, col="skyblue", border="slateblue", main="")
+#filter out nominally sig hits
+resSig = res[ res$padj < 0.1, ]
+#filter down-regulated from sig
+head( resSig[ order( resSig$foldChange, -resSig$baseMean ), ] )
+#filter up-reg from sig
+head( resSig[ order( -resSig$foldChange, -resSig$baseMean ), ] )
