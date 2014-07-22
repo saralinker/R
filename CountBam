@@ -18,6 +18,8 @@ exbygene <- exonsBy(TxDb.Hsapiens.UCSC.hg19.knownGene, "gene")
 
 #summarize
 files <- c("~/Documents/SalkProjects/Marchetto/NHPTimeCourse/RNASeq/CM1-16-5_00_accepted_hits.bam",
+           "~/Documents/SalkProjects/Marchetto/NHPTimeCourse/RNASeq/CM1-16-5_00_accepted_hits.bam",
+           "~/Documents/SalkProjects/Marchetto/NHPTimeCourse/RNASeq/CM1-16-5_01_accepted_hits.bam",
            "~/Documents/SalkProjects/Marchetto/NHPTimeCourse/RNASeq/CM1-16-5_01_accepted_hits.bam")
 
 getCounts <- function(fileName) {
@@ -30,12 +32,12 @@ getCounts <- function(fileName) {
 
 countTable <- sapply(files, getCounts)
 countTable <- countTable[rowSums(countTable) != 0, ]
-colnames(countTable) <- c("human1a", "human1b")
+colnames(countTable) <- c("human1a","human1a2", "human1b","human1b2")
 
 design <- data.frame(
-  condition=c("human1a", "human1b"),
-  replicate=c(1,1),
-  libType=rep("paired-end", 2)
+  condition=c("human1a", "human1a","human1b","human1b"),
+  replicate=c(1,2,1,2),
+  libType=rep("paired-end", 4)
   #,countfiles=colData(se_exons)[,1], stringsAsFactors=TRUE)
 )
 
@@ -59,8 +61,13 @@ condition = design$condition[ pairedSamples ]
 
 
 #DESeq2
-dds <- DESeqDataSetFromMatrix(countData = countData,
-                              colData = colData,
+cds = newCountDataSet( countTable, condition )
+cds = newCountDataSet( countTable, condition )
+unlist(sizeFactors( cds ))
+colData2 <- data.frame(c(rep("treated",2),rep("untreated",2)),c(rep("paired-end",4)),c(sizeFactors(cds)))
+colnames(colData2) <- c("condition","type","sizeFactor")
+dds <- DESeqDataSetFromMatrix(countData = countTable,
+                              colData = colData2,
                               design = ~ condition)
 
 dds$condition <- factor(dds$condition,
