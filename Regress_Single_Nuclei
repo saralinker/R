@@ -1,0 +1,134 @@
+#Regression Model of Gene expression using Clusters (and re-cluster)
+# Created: 09/2014, Slinker
+######################
+# Step 1: Paperwork
+######################
+#load libraries
+library(lmerTest)
+library(fdrtool)
+library(ggplot2)
+#load and clean data
+fpkm <- as.data.frame(read.table(as.matrix("/Users/saralinker/Documents/SalkProjects/BenLacar/hiseq_2014_02_23.txt"),header=TRUE,row.names=1))
+samples <- read.table(as.matrix("~/Documents/SalkProjects/BenLacar/nucleisamples.txt"))
+samples <- as.character(samples$V1)
+label <- read.table(as.matrix("~/Documents/SalkProjects/BenLacar/nucleilabels.txt"))
+label <- as.character(as.factor(label$V1))
+fpkm_2 <- fpkm[,samples]
+fpkm_2 <- fpkm_2[rowSums(fpkm_2) > 0,]
+#calculate the number of nuclei expressing each gene
+prop.exp <- function(x){
+  a <- sum(x>0) / length(x)
+}
+prop <- as.vector(unlist(apply(fpkm_2,MARGIN=1,prop.exp)))
+#remove genes with less than 47% expressing
+fpkm_3 <- na.exclude(fpkm_2[prop>0.47,])
+#log transform 
+fpkm_3 <- log(fpkm_3+1,2)
+#load mapping statistics
+stats <- as.data.frame(read.csv(as.matrix("~/Documents/SalkProjects/BenLacar/prox_mapping.csv"),header=TRUE))
+rownames(stats) <- stats[,1]
+stats <- stats[,-c(1)]
+mapping <- stats[samples,][,7]
+q <- quantile(mapping)
+#convert continuous mapping to binary (not enough power for continuous in lmer)
+mapping_f <- mapping < q[3]
+
+######################
+# Step 2: The regression loop
+######################
+regress <- function(fpkm_simple){
+  
+  
+}
+
+#create an empty data.frame
+####Step1
+k_all <- kmeans(t(fpkm_3),centers=3)
+df_all <- data.frame()
+####Step2
+df_rek <- data.frame()
+#### Compare just prox1+ cells
+df_prox <- data.frame()
+####Step3
+#df_rek_reg <- data.frame()
+
+binarygenes <- vector()
+for (g in rownames(fpkm_simple)){
+#for (g in rownames(fpkm_3)){
+  exp = as.numeric(as.vector(fpkm_simple[g,]))
+  #exp = as.numeric(as.vector(fpkm_3[g,]))
+  tmp.df <- data.frame(
+    exp = exp[exp>0],#(exp > 10),
+    #group = as.vector(as.factor(label[exp>0])),
+    group = as.factor(label_simple[exp>0]),
+    #cluster = as.factor(k_all$cluster[exp>0])
+    cluster = as.factor(cluster_simple[exp>0]),
+    map = map_simple[exp >0]
+  )
+  if (length(table(tmp.df$cluster)) <= 1){# |length(table(tmp.df$group)) <= 1 ){
+    binarygenes <- c(binarygenes,g)
+  }else{
+      #model <- lm(exp ~ cluster, tmp.df)
+      model <- lmer(exp ~ cluster + (1|map), tmp.df)
+  }
+  #model <- glm(exp ~  group, tmp.df, family="poisson")
+      s.model <- summary(model)
+      genes <- c(genes, g)
+    for (i in rownames(s.model$coefficients)){
+      n <- gsub(":",".",i)
+      df_all[n,g] = s.model$coefficients[i,1]
+      n <- paste(n,".pvalue",sep="")
+      #df_all[n,g] = s.model$coefficients[i,4]
+      df_all[n,g] = s.model$coefficients[i,5]
+    }
+      #e <- rbind(e, s.model$coefficients[-c(1),1])
+      #p <- rbind(p, s.model$coefficients[-c(1),4])
+    #}
+  #}
+}
+df_all2 <- as.data.frame(t(df_all))
+df_all2 <- df_all2[order(df_all2$cluster2.pvalue),]
+
+df_all_p <- data.frame(p = c(df_all2$cluster2.pvalue,
+                             df_all2$cluster3.pvalue),
+                       group= c(rep("2",length(df_all2$cluster2.pvalue)),
+                                rep("3",length(df_all2$cluster3.pvalue))
+                                ),
+                       gene = rownames(df_all2)
+)
+df_all_p <- na.exclude(df_all_p[order(df_all_p$p),])
+f <- fdrtool(x=df_all_p$p,statistic="pvalue",plot=FALSE)
+df_all_p$f <- f$qval
+
+#df2 <- data.frame(e,p,genes)
+#f <- fdrtool(as.vector(p),"pvalue",plot=FALSE)
+#df2$f <- f$qval
+top_genes <- vector()
+a <- df_all2$cluster2.grouphno.pvalue
+new <- na.exclude(rownames(df_all2[!is.na(a) & a < 0.05,]))
+top_genes <- c(top_genes,new)
+
+#recompute kmean with only the top genes
+re.k <- kmeans(t(fpkm_3[top_genes,]),centers=3)
+re.k2 <- kmeans(t(fpkm_3[top_genes,]),centers=4)
+#get the sample names that cluster with no overlap between hnp and hno
+simple_samples <- data.frame(re.k$cluster,label)
+simple_sample <- rownames(simple_samples[simple_samples$re.k.cluster != 3,])
+fpkm_simple <- fpkm_3[,simple_sample]
+names(label) <- colnames(fpkm_3)
+label_simple <- as.vector(label[simple_sample])
+cluster_simple <- re.k$cluster[re.k$cluster!= 3 ]
+#########
+g <- as.numeric(as.vector(fpkm_2["F630111L10Rik",]))
+tmp <- data.frame(g,label=label,k.cluster=as.factor(re.k2$cluster))
+tmp2 <- tmp[tmp$g >0,]
+#ggplot(tmp,aes(label,log(g+1,2),colour=k.cluster))+
+ggplot(tmp[tmp$g >0,],aes(k.cluster,log(g+1,2),colour=label))+
+  geom_boxplot(outlier.colour="black")+
+  geom_point()+
+  #geom_jitter(colour=tmp$label)+
+  xlab("Group")+
+  ylab("log+1 FPKM")+
+  labs(title="F630111L10Rik")+
+  theme(text=element_text(size=16))
+
