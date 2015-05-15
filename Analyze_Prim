@@ -1,5 +1,6 @@
 library(plyr)
-# load("~/Documents/primate_mac/SingleAluInserts_NHP.rda")#this data contains frames for each NHP where there is only one Alu in each frame
+#### Edit here
+#load("~/Documents/primate_mac/SingleAluInserts_NHP.rda")#this data contains frames for each NHP where there is only one Alu in each frame
 # alu.chimp.single
 # alu.gor.single
 # alu.or.single
